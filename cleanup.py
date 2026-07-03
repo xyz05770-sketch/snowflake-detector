@@ -7,6 +7,20 @@ files = [
     "semantic_view_review.json",
 ]
 
+# Directory whose contents get cleared (directory itself is kept)
+output_dir = Path("snowflake_inventory_output")
+
+print("This will permanently delete:")
+for file in files:
+    print(f"  - {file}")
+print(f"  - everything inside {output_dir}/")
+print("\n.env, input.json, and scope.json are NOT touched.")
+
+confirm = input("\nContinue? [y/N] ").strip().lower()
+if confirm != "y":
+    print("Aborted, nothing was deleted.")
+    raise SystemExit(0)
+
 for file in files:
     path = Path(file)
     try:
@@ -16,8 +30,6 @@ for file in files:
         print(f"File not found: {file}")
 
 # Clear all contents of the output directory while keeping the directory itself
-output_dir = Path("snowflake_inventory_output")
-
 if output_dir.exists() and output_dir.is_dir():
     for item in output_dir.iterdir():
         try:
