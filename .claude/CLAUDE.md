@@ -31,8 +31,10 @@ logic from `sf_detector.py`:
   per object type (only if that type has data in scope).
 - **`src/semantic_view_builder.py`** — drafts a Snowflake
   `CREATE SEMANTIC VIEW` statement from `sf_detector.py`'s `tables.json`/
-  `views.json` output, plus live profiling (`APPROX_COUNT_DISTINCT` + sample
-  values) of shortlisted columns. Column role classification (key/fact/
+  `views.json` output, plus live profiling (exact `COUNT(DISTINCT)` — not
+  `APPROX_COUNT_DISTINCT`, so classification is deterministic across repeated
+  runs on unchanged data — + sample values) of shortlisted columns. Column
+  role classification (key/fact/
   dimension) and relationship inference (`<X>_ID` → `<X>S.ID`) are heuristic
   — the generated SQL is a draft to be reviewed, not guaranteed-correct
   output. `render_sql()` is kept isolated from the classification logic so

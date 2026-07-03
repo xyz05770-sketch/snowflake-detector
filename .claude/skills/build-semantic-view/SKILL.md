@@ -12,20 +12,22 @@ of the shortlisted tables.
 ## Flow
 
 0. **Check for an in-progress review first.** Before assuming this is a fresh
-   run, look for an existing review JSON (e.g. `semantic_view_review.json` or
-   whatever `--review-file` produced last time) in the working directory. If
-   one exists:
+   run, check whether a review JSON (e.g. `semantic_view_review.json` or
+   whatever `--review-file` produced last time) already exists in the working
+   directory — a plain existence check (e.g. Glob) is enough; don't read the
+   file's contents just to decide which question to ask. If one exists:
    - Ask the user whether they want to **resume** (edit it further /
      re-render as-is via `--from-review`, per step 5) or **start over** with
      a fresh classify-mode run — don't assume either silently.
    - If resuming, skip straight to step 5 (no new scope/inventory/connection
      needed — this is exactly the case where the user re-invoked the skill
-     in a new session instead of just continuing the old conversation).
+     in a new session instead of just continuing the old conversation). Read
+     the file's contents only once resuming is confirmed and you actually
+     need to inspect or edit it.
    - If starting over, continue to step 1 as normal; a fresh classify run
      will overwrite the existing review JSON, so mention that before running
-     it if the file looks like it has hand-edits worth keeping (e.g. its
-     `"role"` values differ from what a plain heuristic run would likely
-     produce — when in doubt, ask rather than silently clobbering it).
+     it. If the user wants to check whether it has hand-edits worth keeping
+     first, that's the point to read it — not before they've chosen.
 
 1. **Determine scope.** If the user hasn't already given you a natural-language
    description of the analysis goal ("build a semantic view for order
@@ -62,35 +64,51 @@ of the shortlisted tables.
    that were dropped from the draft SQL (e.g. columns misclassified as
    `key`), so nothing is silently hidden from the user.
 
-4. **Present the result:** show the generated SQL file, the review JSON's
-   path, and the console summary (tables with their inferred
-   keys/facts/dimensions, plus inferred relationships). The summary also
-   includes a **"Suggested Review Points"** table, and the same hints are
-   written inline into the review JSON (as a top-level `review_hints` list
-   and a `"hint"` field on the flagged column itself) — point the user at
-   these first, since they call out exactly the columns most likely to be
-   misclassified (non-primary "key" columns that are either an unmatched
-   foreign key or a measure the >0.95-uniqueness heuristic mistook for a
-   key). Explain the classification overall is heuristic (name patterns +
-   cardinality ratios), not guaranteed correct, and that **the review JSON —
-   not the SQL — is the file to correct**: edit a column's `"role"`
-   (`key`/`fact`/`dimension`), its `"primary"` flag, or the
-   `relationships`/`metrics` lists.
+4. **Present the result — summary only, not full file contents.** The
+   `python` command's own console output already includes a summary table
+   (tables with their inferred keys/facts/dimensions, plus inferred
+   relationships) and a **"Suggested Review Points"** table; relay that
+   summary and the SQL/review-JSON file paths to the user. Don't `Read` the
+   full SQL or review JSON into the conversation at this step — on a
+   real-sized schema either file can run to hundreds or thousands of lines,
+   and the summary already contains everything needed to decide what to fix.
+   Only read a file in full if the user explicitly asks to see its contents.
+   The same hints are written inline into the review JSON too (as a
+   top-level `review_hints` list and a `"hint"` field on the flagged column
+   itself), so the file is self-explanatory if the user opens it themselves.
+   Point the user at the hints first, since they call out exactly the
+   columns most likely to be misclassified (non-primary "key" columns that
+   are either an unmatched foreign key or a measure the >0.95-uniqueness
+   heuristic mistook for a key). Explain the classification overall is
+   heuristic (name patterns + cardinality ratios), not guaranteed correct,
+   and that **the review JSON — not the SQL — is the file to correct**: edit
+   a column's `"role"` (`key`/`fact`/`dimension`), its `"primary"` flag, or
+   the `relationships`/`metrics` lists.
 
 5. **Iterate via the review file, capped at 2 rounds.** If the user wants a
-   column reclassified or a relationship/metric changed, apply the edit to
-   the review JSON (either the user edits it directly, or you edit it on
-   their behalf from their description of the fix), then re-render
-   deterministically with no reprofiling and no chat-based SQL editing:
+   column reclassified or a relationship/metric changed, either the user
+   edits the review JSON directly, or — the default when you're applying the
+   edit on their behalf — you run a small `python -c` snippet via Bash that
+   loads the JSON, mutates just the relevant field(s), and writes it back
+   (`json.load`/mutate/`json.dump`), rather than using `Read`+`Edit`. This
+   keeps the (potentially large) review file out of the conversation, since
+   the edit is a targeted, mechanical field change, not something that needs
+   visual inspection. Reserve `Read`+`Edit` for cases where the user
+   specifically wants to see a section of the file before changing it. Then
+   re-render deterministically with no reprofiling and no chat-based SQL
+   editing:
    ```
    python src/semantic_view_builder.py --from-review <review.json> --output semantic_view.sql
    ```
    This needs no Snowflake connection and no inventory/scope flags — it's a
-   pure function of the review file. Allow at most **2** such
-   edit-and-rerender cycles. If a third round of corrections is requested,
-   tell the user plainly that further automated cycles aren't likely to
-   converge faster than a direct fix, and offer to make the final change
-   directly in the rendered SQL instead.
+   pure function of the review file, and it also writes the reconciled
+   `facts`/`dimensions`/`metrics`/`review_hints` back into the review JSON
+   itself (`roles` stays the source of truth; these derived fields are
+   refreshed so the file never disagrees with the SQL it just produced).
+   Allow at most **2** such edit-and-rerender cycles. If a third round of
+   corrections is requested, tell the user plainly that further automated
+   cycles aren't likely to converge faster than a direct fix, and offer to
+   make the final change directly in the rendered SQL instead.
 
    If the user wants different tables in scope entirely (not just a
    reclassification), that's not a review-file edit — re-run classify mode

@@ -484,7 +484,9 @@ def main():
         draft = load_review(args.from_review)
         sql = render_sql(draft)
         Path(args.output).write_text(sql)
+        emit_review(draft, args.from_review)
         console.print(f"[green]Rendered semantic view SQL written to {Path(args.output).resolve()}[/green]")
+        console.print(f"[green]Reconciled facts/dimensions/metrics/review_hints written back to {Path(args.from_review).resolve()}[/green]")
         print_summary(draft)
         return
 
