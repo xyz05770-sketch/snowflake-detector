@@ -1,0 +1,606 @@
+{
+  "view_name": "FINTECH_TRANSACTION_INTELLIGENCE",
+  "tables": [
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "TRANSACTION_TOP",
+      "columns": [
+        {
+          "column_name": "ENTITY_NAME",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "AMOUNT",
+          "data_type": "REAL"
+        },
+        {
+          "column_name": "COUNT",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "ENTITY_NAME": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "AMOUNT": {
+          "role": "fact"
+        },
+        "COUNT": {
+          "role": "fact"
+        }
+      }
+    },
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "AGG_USER",
+      "columns": [
+        {
+          "column_name": "BRAND",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "PERCENTAGE",
+          "data_type": "REAL"
+        },
+        {
+          "column_name": "COUNT",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "BRAND": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "PERCENTAGE": {
+          "role": "fact"
+        },
+        "COUNT": {
+          "role": "fact"
+        }
+      }
+    },
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "AGG_TRANSACTION",
+      "columns": [
+        {
+          "column_name": "NAME",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "AMOUNT",
+          "data_type": "REAL"
+        },
+        {
+          "column_name": "COUNT",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "NAME": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "AMOUNT": {
+          "role": "fact"
+        },
+        "COUNT": {
+          "role": "fact"
+        }
+      }
+    },
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "MAP_TRANSACTION",
+      "columns": [
+        {
+          "column_name": "NAME",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "AMOUNT",
+          "data_type": "REAL"
+        },
+        {
+          "column_name": "COUNT",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "NAME": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "AMOUNT": {
+          "role": "fact"
+        },
+        "COUNT": {
+          "role": "fact"
+        }
+      }
+    },
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "TOP_USER",
+      "columns": [
+        {
+          "column_name": "NAME",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "REGISTERED_USERS",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "NAME": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "REGISTERED_USERS": {
+          "role": "fact"
+        }
+      }
+    },
+    {
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "name": "MAP_USER",
+      "columns": [
+        {
+          "column_name": "DISTRICT",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "QUARTER",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "STATE",
+          "data_type": "TEXT(256)"
+        },
+        {
+          "column_name": "YEAR",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "_FIVETRAN_DELETED",
+          "data_type": "BOOLEAN"
+        },
+        {
+          "column_name": "_FIVETRAN_SYNCED",
+          "data_type": "TIMESTAMP_TZ(0,9)"
+        },
+        {
+          "column_name": "REGISTERED_USERS",
+          "data_type": "FIXED(38,0)"
+        },
+        {
+          "column_name": "APP_OPENS",
+          "data_type": "FIXED(38,0)"
+        }
+      ],
+      "kind": "table",
+      "roles": {
+        "DISTRICT": {
+          "role": "dimension"
+        },
+        "QUARTER": {
+          "role": "dimension"
+        },
+        "STATE": {
+          "role": "dimension"
+        },
+        "YEAR": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_DELETED": {
+          "role": "dimension"
+        },
+        "_FIVETRAN_SYNCED": {
+          "role": "dimension"
+        },
+        "REGISTERED_USERS": {
+          "role": "fact"
+        },
+        "APP_OPENS": {
+          "role": "fact"
+        }
+      }
+    }
+  ],
+  "relationships": [],
+  "facts": [
+    {
+      "table": "MAP_USER",
+      "column": "APP_OPENS"
+    }
+  ],
+  "dimensions": [
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "ENTITY_NAME"
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "QUARTER"
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "STATE"
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "YEAR"
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "_FIVETRAN_SYNCED"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "BRAND"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "QUARTER"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "STATE"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "YEAR"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "AGG_USER",
+      "column": "_FIVETRAN_SYNCED"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "NAME"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "QUARTER"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "STATE"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "YEAR"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "_FIVETRAN_SYNCED"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "NAME"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "QUARTER"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "STATE"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "YEAR"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "_FIVETRAN_SYNCED"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "NAME"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "QUARTER"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "STATE"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "YEAR"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "TOP_USER",
+      "column": "_FIVETRAN_SYNCED"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "DISTRICT"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "QUARTER"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "STATE"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "YEAR"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "_FIVETRAN_DELETED"
+    },
+    {
+      "table": "MAP_USER",
+      "column": "_FIVETRAN_SYNCED"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "total_app_opens",
+      "table": "MAP_USER",
+      "expression": "SUM(APP_OPENS)"
+    }
+  ],
+  "review_hints": [
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "AMOUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "TRANSACTION_TOP",
+      "column": "COUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "AGG_USER",
+      "column": "PERCENTAGE",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "AGG_USER",
+      "column": "COUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "AMOUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "AGG_TRANSACTION",
+      "column": "COUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "AMOUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "MAP_TRANSACTION",
+      "column": "COUNT",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "TOP_USER",
+      "column": "REGISTERED_USERS",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    },
+    {
+      "table": "MAP_USER",
+      "column": "REGISTERED_USERS",
+      "hint": "Classified as key from a high uniqueness ratio, but it's not a primary key and doesn't look like a foreign key. If this is actually a measure, change \"role\" to \"fact\" (or \"dimension\") so it isn't silently excluded from the SQL."
+    }
+  ]
+}

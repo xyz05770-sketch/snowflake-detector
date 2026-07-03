@@ -1,0 +1,6 @@
+.env
+.secrets
+snowflake_inventory_output/
+__pycache__/
+*.pyc
+.venv/

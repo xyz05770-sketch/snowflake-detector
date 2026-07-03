@@ -1,0 +1,6 @@
+{
+  "databases": ["DB1", "DB2"],
+  "schemas": {
+    "DB1": ["SCHEMA_A", "SCHEMA_B"]
+  }
+}
