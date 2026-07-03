@@ -131,6 +131,16 @@ def parse_scope(args):
     return scope
 
 
+def ensure_columns_dependency(object_types):
+    """COLUMNS is merged into TABLES/VIEWS output rather than exported on its
+    own — if either is requested without it, tables/views would silently come
+    back with empty column lists instead of an error, so pull it in implicitly."""
+    names = {name for name, _ in object_types}
+    if ("TABLES" in names or "VIEWS" in names) and "COLUMNS" not in names:
+        object_types = object_types + [ot for ot in OBJECT_TYPES if ot[0] == "COLUMNS"]
+    return object_types
+
+
 def resolve_targets(conn, scope):
     """Expand {database: [schema,...] or None} into a list of (database, schema) pairs."""
     targets = []
@@ -191,6 +201,16 @@ def scan(conn, targets, object_types):
     return results, errors
 
 
+def _clean_comment(value):
+    """SHOW ...'s comment column comes back as '' for uncommented objects, and
+    as NaN (via pandas) for rows from a scan where no row in that object type
+    had a comment at all — pd.isna() catches both without misfiring on a
+    real, truthy comment string."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    return value or None
+
+
 def build_outputs(results, targets):
     """Turn raw per-object-type scan results into minimal, nested export records."""
     databases_schemas = {}
@@ -209,7 +229,11 @@ def build_outputs(results, targets):
         for row in columns_df.to_dict("records"):
             key = (row["database"], row["schema"], row.get("table_name"))
             columns_by_table.setdefault(key, []).append(
-                {"column_name": row.get("column_name"), "data_type": row.get("data_type")}
+                {
+                    "column_name": row.get("column_name"),
+                    "data_type": row.get("data_type"),
+                    "comment": _clean_comment(row.get("comment")),
+                }
             )
 
     for object_type in ("TABLES", "VIEWS"):
@@ -221,6 +245,7 @@ def build_outputs(results, targets):
                 "database": row["database"],
                 "schema": row["schema"],
                 "name": row.get("name"),
+                "comment": _clean_comment(row.get("comment")),
                 "columns": columns_by_table.get((row["database"], row["schema"], row.get("name")), []),
             }
             for row in df.to_dict("records")
@@ -328,6 +353,7 @@ def main():
         object_types = [ot for ot in OBJECT_TYPES if ot[0] in wanted]
         if not object_types:
             sys.exit(f"No matching object types for: {args.object_types}")
+        object_types = ensure_columns_dependency(object_types)
 
     scope = parse_scope(args)
 

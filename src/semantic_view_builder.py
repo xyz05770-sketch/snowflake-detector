@@ -28,6 +28,9 @@ console = Console()
 ID_LIKE_RE = re.compile(r"(^ID$|_ID$|_KEY$)", re.IGNORECASE)
 NUMERIC_TYPES = ("NUMBER", "FIXED", "FLOAT", "REAL", "INT", "DECIMAL")
 
+_EMBED_MODEL = None
+_EMBED_MODEL_NAME = "all-mpnet-base-v2"
+
 
 def load_inventory(output_dir):
     """Load and merge tables.json + views.json from an sf_detector output dir."""
@@ -56,6 +59,75 @@ def load_scope_file(path):
     return description, tables
 
 
+def _get_embedding_model():
+    """Lazily load and cache the sentence-transformers model for the life of
+    this process. sentence_transformers is imported here (not at module top)
+    so --tables/--from-review/--help never require it."""
+    global _EMBED_MODEL
+    if _EMBED_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        _EMBED_MODEL = SentenceTransformer(_EMBED_MODEL_NAME)
+    return _EMBED_MODEL
+
+
+def _table_text_blob(t):
+    parts = [t["name"]]
+    if t.get("comment"):
+        parts.append(t["comment"])
+    for c in t["columns"]:
+        parts.append(c["column_name"])
+        if c.get("comment"):
+            parts.append(c["comment"])
+    return " ".join(parts)
+
+
+def _select_by_elbow(ranked):
+    """ranked: list of (score, table) sorted descending by score. Finds the
+    cut point that best separates the scores into a "relevant" top group and
+    a "less relevant" bottom group, using the same variance-minimization
+    idea as Jenks natural breaks / 1D k-means: for every possible cut point,
+    measure the combined within-group variance versus one big group, and
+    keep the cut that minimizes it.
+
+    This replaced a "cut at the single largest gap between consecutive
+    scores" rule that looked reasonable but was empirically wrong: on real
+    Snowflake schemas the biggest raw jump between neighboring scores can
+    fall *inside* the group of tables that should all be kept (e.g. between
+    the 1st and 2nd most-relevant tables), not at the true boundary between
+    relevant and irrelevant tables. Variance minimization weighs every
+    possible boundary's overall group cohesion rather than a single local
+    jump, and correctly finds the true boundary in that situation."""
+    if len(ranked) <= 2:
+        return ranked
+    scores = [s for s, _ in ranked]
+    n = len(scores)
+    overall_mean = sum(scores) / n
+    baseline_ss = sum((s - overall_mean) ** 2 for s in scores)
+    if baseline_ss <= 1e-12:
+        # All scores are effectively identical - no basis to prefer any subset.
+        return ranked
+    best_k, best_ss = n, baseline_ss
+    for k in range(1, n):
+        group1, group2 = scores[:k], scores[k:]
+        mean1, mean2 = sum(group1) / len(group1), sum(group2) / len(group2)
+        ss = sum((s - mean1) ** 2 for s in group1) + sum((s - mean2) ** 2 for s in group2)
+        if ss <= best_ss:
+            best_k, best_ss = k, ss
+    return ranked[:best_k]
+
+
+def _print_shortlist_scores(ranked, keep):
+    kept_keys = {id(t) for _, t in keep}
+    table = Table(title="Semantic Shortlist Ranking (description match)")
+    table.add_column("Table")
+    table.add_column("Score", justify="right")
+    table.add_column("Kept?")
+    for score, t in ranked:
+        fq = f"{t['database']}.{t['schema']}.{t['name']}"
+        table.add_row(fq, f"{score:.3f}", "yes" if id(t) in kept_keys else "-")
+    console.print(table)
+
+
 def shortlist_tables(inventory, description=None, explicit_tables=None):
     if explicit_tables:
         wanted = {t.strip().upper() for t in explicit_tables}
@@ -69,17 +141,29 @@ def shortlist_tables(inventory, description=None, explicit_tables=None):
         return shortlisted
 
     if description:
-        keywords = [w.lower() for w in re.findall(r"[a-zA-Z]+", description) if len(w) > 2]
-        scored = []
-        for t in inventory:
-            haystack = t["name"].lower() + " " + " ".join(c["column_name"].lower() for c in t["columns"])
-            score = sum(1 for kw in keywords if kw in haystack)
-            if score > 0:
-                scored.append((score, t))
-        if scored:
-            scored.sort(key=lambda st: st[0], reverse=True)
-            return [t for _, t in scored]
-        console.print("[yellow]No tables matched the description; using the full inventory instead.[/yellow]")
+        try:
+            model = _get_embedding_model()
+        except ImportError:
+            sys.exit(
+                "sentence-transformers is required for --description matching but "
+                "isn't installed. Run `pip install -r requirements.txt`, or use "
+                "--tables/--scope-file instead."
+            )
+        except Exception as e:
+            sys.exit(
+                f"Could not load the sentence-transformers model ({e}). This usually "
+                "means no internet access for the one-time model download. Fix that, "
+                "or use --tables/--scope-file instead."
+            )
+
+        blobs = [_table_text_blob(t) for t in inventory]
+        embeddings = model.encode(blobs, normalize_embeddings=True)
+        query_vec = model.encode([description], normalize_embeddings=True)[0]
+        scores = embeddings @ query_vec
+        ranked = sorted(zip(scores.tolist(), inventory), key=lambda sv: sv[0], reverse=True)
+        keep = _select_by_elbow(ranked)
+        _print_shortlist_scores(ranked, keep)
+        return [t for _, t in keep]
 
     return inventory
 
@@ -128,6 +212,13 @@ def profile_columns(conn, tables):
 
     cur.close()
     return profiles
+
+
+def _col_comment(table, column_name):
+    return next(
+        (c.get("comment") for c in table["columns"] if c["column_name"] == column_name),
+        None,
+    )
 
 
 def classify_columns(table, profile):
@@ -234,19 +325,24 @@ def build_draft(tables, profiles, view_name):
     review_hints = build_review_hints(tables_with_roles, relationships)
 
     facts = [
-        {"table": t["name"], "column": name}
+        {"table": t["name"], "column": name, "comment": _col_comment(t, name)}
         for t in tables_with_roles
         for name, info in t["roles"].items()
         if info["role"] == "fact"
     ]
     dimensions = [
-        {"table": t["name"], "column": name}
+        {"table": t["name"], "column": name, "comment": _col_comment(t, name)}
         for t in tables_with_roles
         for name, info in t["roles"].items()
         if info["role"] == "dimension"
     ]
     metrics = [
-        {"name": f"total_{f['column'].lower()}", "table": f["table"], "expression": f"SUM({f['column']})"}
+        {
+            "name": f"total_{f['column'].lower()}",
+            "table": f["table"],
+            "expression": f"SUM({f['column']})",
+            "comment": f.get("comment"),
+        }
         for f in facts
     ]
 
@@ -299,13 +395,13 @@ def load_review(path):
     draft["review_hints"] = build_review_hints(draft.get("tables", []), draft.get("relationships", []))
 
     facts = [
-        {"table": t["name"], "column": name}
+        {"table": t["name"], "column": name, "comment": _col_comment(t, name)}
         for t in draft.get("tables", [])
         for name, info in t.get("roles", {}).items()
         if info["role"] == "fact"
     ]
     dimensions = [
-        {"table": t["name"], "column": name}
+        {"table": t["name"], "column": name, "comment": _col_comment(t, name)}
         for t in draft.get("tables", [])
         for name, info in t.get("roles", {}).items()
         if info["role"] == "dimension"
@@ -320,7 +416,14 @@ def load_review(path):
         if (f["table"], default_name) in existing_metrics:
             metrics.append(existing_metrics[(f["table"], default_name)])
         else:
-            metrics.append({"name": default_name, "table": f["table"], "expression": f"SUM({f['column']})"})
+            metrics.append(
+                {
+                    "name": default_name,
+                    "table": f["table"],
+                    "expression": f"SUM({f['column']})",
+                    "comment": f.get("comment"),
+                }
+            )
     metrics += [m for key, m in existing_metrics.items() if key not in default_keys]
 
     draft["facts"] = facts
@@ -328,6 +431,21 @@ def load_review(path):
     draft["metrics"] = metrics
 
     return draft
+
+
+def _comment_clause(text):
+    """Snowflake COMMENT='...' clause, or '' if there's nothing to say.
+
+    Column/table comments are a strong signal for Cortex Analyst/Agent -
+    per Snowflake's own guidance, it reads these comments as instructions
+    for interpreting the semantic model, not just human-facing notes - so
+    every comment captured from the source schema is carried through into
+    the generated SQL rather than dropped.
+    """
+    if not text:
+        return ""
+    escaped = text.replace("'", "''")
+    return f" COMMENT='{escaped}'"
 
 
 def render_sql(draft):
@@ -340,7 +458,8 @@ def render_sql(draft):
         pk = next((n for n, i in t["roles"].items() if i["role"] == "key" and i.get("primary")), None)
         fq_name = f'{t["database"]}.{t["schema"]}.{t["name"]}'
         pk_clause = f" PRIMARY KEY ({pk})" if pk else ""
-        table_lines.append(f"    {t['name'].lower()} AS {fq_name}{pk_clause}")
+        comment_clause = _comment_clause(t.get("comment"))
+        table_lines.append(f"    {t['name'].lower()} AS {fq_name}{pk_clause}{comment_clause}")
     lines.append("  TABLES (")
     lines.append(",\n".join(table_lines))
     lines.append("  )")
@@ -355,13 +474,18 @@ def render_sql(draft):
         lines.append(",\n".join(rel_lines))
         lines.append("  )")
 
-    # Semantic names (the AS alias) must be unique across the whole view, even
-    # though table.column on the left is already unique - tables commonly
-    # share column names (QUARTER, STATE, NAME, ...), so always prefix with
-    # the table name rather than relying on the bare column/metric name.
+    # Per Snowflake's grammar, FACTS/DIMENSIONS/METRICS are all
+    # `<table_alias>.<new_name> AS <sql_expr>` - the new semantic name comes
+    # before AS, the expression (here, just the raw column) comes after.
+    # Semantic names must be unique across the whole view even though
+    # table.column on its own is already unique - tables commonly share
+    # column names (QUARTER, STATE, NAME, ...) - so facts/dimensions are
+    # always prefixed with the table name rather than using the bare
+    # column name.
     if draft["facts"]:
         fact_lines = [
-            f"    {f['table'].lower()}.{f['column']} AS {f['table'].upper()}_{f['column'].upper()}"
+            f"    {f['table'].lower()}.{f['table'].upper()}_{f['column'].upper()} AS {f['column']}"
+            f"{_comment_clause(f.get('comment'))}"
             for f in draft["facts"]
         ]
         lines.append("  FACTS (")
@@ -370,7 +494,8 @@ def render_sql(draft):
 
     if draft["dimensions"]:
         dim_lines = [
-            f"    {d['table'].lower()}.{d['column']} AS {d['table'].upper()}_{d['column'].upper()}"
+            f"    {d['table'].lower()}.{d['table'].upper()}_{d['column'].upper()} AS {d['column']}"
+            f"{_comment_clause(d.get('comment'))}"
             for d in draft["dimensions"]
         ]
         lines.append("  DIMENSIONS (")
@@ -379,7 +504,8 @@ def render_sql(draft):
 
     if draft["metrics"]:
         metric_lines = [
-            f"    {m['table'].lower()}.{m['name']} AS {m['expression']}" for m in draft["metrics"]
+            f"    {m['table'].lower()}.{m['name']} AS {m['expression']}{_comment_clause(m.get('comment'))}"
+            for m in draft["metrics"]
         ]
         lines.append("  METRICS (")
         lines.append(",\n".join(metric_lines))
