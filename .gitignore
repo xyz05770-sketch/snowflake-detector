@@ -1,6 +1,8 @@
 .env
 .secrets
 snowflake_inventory_output/
+semantic_view*.sql
+semantic_view*_review.json
 __pycache__/
 *.pyc
 .venv/
