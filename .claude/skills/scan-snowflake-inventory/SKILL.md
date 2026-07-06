@@ -27,12 +27,15 @@ databases/schemas, printing a console summary and exporting full detail
      one-off scan. A bare schema name applies to every listed database; a
      qualified `DB.SCHEMA` name applies to just that database.
 
-2. **Determine connection/auth.** If the user already has `.env`/`.secrets`
-   configured (see `README.md`'s Authentication section), no connection flags
-   are needed — just run the command. Otherwise ask for
-   `--account`/`--user`/`--auth-method` (`externalbrowser`, `password`, or
-   `keypair`; `keypair` also needs `--private-key-path`), or offer to help
-   them create `.env` from `templates/.env.example`.
+2. **Determine connection/auth.** Check for `.env`/`.secrets` at the project
+   root with `ls -la` (via Bash) in the project root, NOT the Glob tool —
+   Glob does not reliably match dotfiles like `.env` and will falsely report
+   none found. If either file exists, assume it's configured (see
+   `README.md`'s Authentication section) and run the command with no
+   connection flags — don't ask the user about auth. Only if neither file
+   exists, ask for `--account`/`--user`/`--auth-method` (`externalbrowser`,
+   `password`, or `keypair`; `keypair` also needs `--private-key-path`), or
+   offer to help them create `.env` from `templates/.env.example`.
 
 3. **Run the scan:**
    ```

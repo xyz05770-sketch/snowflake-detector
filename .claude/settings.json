@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Glob(**)",
+      "Grep(**)",
+      "Bash(python src/sf_detector.py:*)",
+      "Bash(python src/semantic_view_builder.py:*)",
+      "Bash(./.venv/Scripts/python.exe src/sf_detector.py:*)",
+      "Bash(./.venv/Scripts/python.exe src/semantic_view_builder.py:*)",
+      "Bash(python -c:*)",
+      "Bash(./.venv/Scripts/python.exe -c:*)",
+      "Bash(timeout * ./.venv/Scripts/python.exe -c:*)",
+      "Bash(ls -la:*)",
+      "Bash(ls:*)",
+      "Bash(grep -c *:*)"
+    ]
+  }
+}
