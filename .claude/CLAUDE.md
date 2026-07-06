@@ -42,7 +42,16 @@ logic from `sf_detector.py`:
   `CREATE SEMANTIC VIEW` statement from `sf_detector.py`'s `tables.json`/
   `views.json` output, plus live profiling (exact `COUNT(DISTINCT)` — not
   `APPROX_COUNT_DISTINCT`, so classification is deterministic across repeated
-  runs on unchanged data — + sample values) of shortlisted columns. Column
+  runs on unchanged data — + sample values) of shortlisted columns. A
+  `--scope-file` can describe multiple views to build in one run (a
+  `"views"` list, each entry with a `view_name` plus a `description` or
+  `tables`) — tables shared by more than one view are profiled only once,
+  by shortlisting every view first and profiling the deduped union of
+  their tables before classifying each view separately. Each view is
+  written to its own `--output-dir/<view_name>/` folder (`semantic_view.sql`
+  + `semantic_view_review.json`), so a batch of views never collides on
+  filenames; `--from-review <path>` re-renders a single view's SQL directly
+  alongside its review file. Column
   role classification (key/fact/
   dimension) and relationship inference (`<X>_ID` → `<X>S.ID`) are heuristic
   — the generated SQL is a draft to be reviewed, not guaranteed-correct

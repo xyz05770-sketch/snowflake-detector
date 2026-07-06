@@ -1,3 +1,18 @@
 {
-  "description": "Fintech transaction intelligence: aggregated and mapped transactions with top entities, sliced by state, quarter, and year. Interested in transaction volume, amount trends, and top-performing regions and entities."
+  "views": [
+    {
+      "view_name": "COMPANY_ENRICHMENT_TRANSACTION_CONTEXT",
+      "description": "Customer order analysis: orders, customers, order line items, and returns/refunds. Interested in revenue, order counts, and customer signup trends."
+    },
+    {
+      "view_name": "TRANSACTION_INTELLIGENCE",
+      "database": "LANDING",
+      "schema": "FINTECH",
+      "tables": ["AGG_TRANSACTION", "MAP_TRANSACTION", "TRANSACTION_TOP"]
+    },
+    {
+      "view_name": "GROWTH_AND_ENGAGEMENT",
+      "description": "User growth and engagement: aggregated users, district-level map data, and top user rankings across states and time. Interested in registered user growth, app open rates, brand penetration, and regional engagement trends."
+    }
+  ]
 }

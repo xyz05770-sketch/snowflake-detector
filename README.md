@@ -32,8 +32,8 @@ Fill in `.env` (connection details) and `input.json` (scope) — see
 | Task | Command |
 | --- | --- |
 | Inventory a schema | `python src/sf_detector.py --account <acct> --user <user> --input input.json` |
-| Draft a semantic view | `python src/semantic_view_builder.py --inventory-dir ./snowflake_inventory_output --scope-file scope.json --view-name <NAME> --output semantic_view.sql --account <acct> --user <user>` |
-| Re-render after edits | `python src/semantic_view_builder.py --from-review semantic_view_review.json --output semantic_view.sql` |
+| Draft semantic view(s) | `python src/semantic_view_builder.py --inventory-dir ./snowflake_inventory_output --scope-file scope.json --output-dir semantic_views_output --account <acct> --user <user>` |
+| Re-render after edits | `python src/semantic_view_builder.py --from-review semantic_views_output/<view_name>/semantic_view_review.json` |
 | Fresh start | `python cleanup.py` |
 
 Details on scope files, output schemas, auth methods, and the
@@ -41,10 +41,10 @@ classify/render workflow: **[docs/GUIDE.md](docs/GUIDE.md)**.
 
 ## Starting fresh
 
-`cleanup.py` deletes generated artifacts — `semantic_view.sql`,
-`semantic_view_review.json`, and everything inside
-`snowflake_inventory_output/` — without touching `.env`, `input.json`, or
-`scope.json`. It's optional (both scripts overwrite their own output on
+`cleanup.py` deletes generated artifacts — everything inside
+`snowflake_inventory_output/` and `semantic_views_output/` (every view
+folder, however many were built) — without touching `.env`, `input.json`,
+or `scope.json`. It's optional (both scripts overwrite their own output on
 rerun anyway), but useful for a guaranteed clean slate. It lists what it's
 about to delete and asks for confirmation first, since these paths are
 gitignored and the delete isn't recoverable via git.
@@ -69,7 +69,6 @@ python cleanup.py
 ├── templates/
 │   ├── .env.example
 │   ├── input.example.json
-│   ├── semantic_view_scope.description.example.json
-│   └── semantic_view_scope.tables.example.json
+│   └── semantic_view_scope.example.json
 └── .claude/skills/build-semantic-view/SKILL.md
 ```

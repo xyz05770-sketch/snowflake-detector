@@ -86,14 +86,17 @@ python src/sf_detector.py --account <account> --user <user> --input input.json
 
 ```json
 {
-  "databases": ["DB1", "DB2"],
-  "schemas": {
-    "DB1": ["SCHEMA_A", "SCHEMA_B"]
-  }
+  "databases": [
+    "DB2",
+    {"database": "DB1", "schemas": ["SCHEMA_A", "SCHEMA_B"]}
+  ]
 }
 ```
 
-`DB2` has no entry, so every schema in it is scanned.
+Each entry in `databases` is either a bare database name (every schema in it
+is scanned) or a `{"database": ..., "schemas": [...]}` object restricting it
+to specific schemas — `DB2` above has no schema restriction, `DB1` is
+limited to `SCHEMA_A`/`SCHEMA_B`, and the database name is never repeated.
 
 ## Authentication
 
@@ -182,11 +185,15 @@ review.
 ### Two modes: classify, then render
 
 Running the tool against live data (**classify mode**, below) is the only
-step that touches Snowflake or involves any heuristics. It writes two files:
-the draft SQL and an editable **review JSON** (`--review-file`, default
-`<output-stem>_review.json`) containing every column's classification —
+step that touches Snowflake or involves any heuristics. A single run can
+build **one or several views** — a `--scope-file` may list multiple
+`{"view_name", "description"|"tables"}` entries — and each view gets its
+own `--output-dir/<view_name>/` folder containing two files: the draft SQL
+(`semantic_view.sql`) and an editable **review JSON**
+(`semantic_view_review.json`) containing every column's classification —
 including columns the heuristic dropped from the draft SQL (e.g. numeric
-measures misclassified as `key`), so nothing is silently hidden.
+measures misclassified as `key`), so nothing is silently hidden. Tables
+shared by more than one view in the same run are profiled only once.
 
 The console output and the review JSON both include a **Suggested Review
 Points** list flagging the columns most worth checking: non-primary `key`
@@ -200,51 +207,66 @@ lists, then re-render in **render mode** — no Snowflake connection, no
 reprofiling, and no re-running the heuristics:
 
 ```
-python src/semantic_view_builder.py --from-review semantic_view_review.json --output semantic_view.sql
+python src/semantic_view_builder.py --from-review semantic_views_output/ORDER_ANALYSIS/semantic_view_review.json
 ```
 
 Render mode is a pure function of the review file: the same review JSON
-always produces byte-identical SQL. This is the intended way to fix
+always produces byte-identical SQL, written as `semantic_view.sql` in the
+same folder as the review file. This is the intended way to fix
 classification issues — not hand-editing the generated SQL directly, which
 isn't reproducible if the tool is ever re-run from scratch.
 
 You can provide the scope either inline on the command line or via a JSON
 file with `--scope-file` — useful for saving/reusing/editing scope without
-retyping it. Two templates are provided, one per mode:
+retyping it, and required if you want to build **more than one view in a
+single run**. `templates/semantic_view_scope.example.json` holds a
+`"views"` list, one entry per view, each with a `view_name` plus either a
+`description` (natural-language mode) or a `tables` list (explicit-table
+mode) — mix both freely in the same file:
 
-- `templates/semantic_view_scope.description.example.json` — natural-language mode:
-  ```json
-  {
-    "description": "Customer order analysis: orders, customers, order line items, and returns/refunds. Interested in revenue, order counts, and customer signup trends."
-  }
-  ```
-- `templates/semantic_view_scope.tables.example.json` — explicit table list mode:
-  ```json
-  {
-    "tables": [
-      "DB1.SCHEMA_A.CUSTOMERS",
-      "DB1.SCHEMA_A.ORDERS",
-      "DB1.SCHEMA_A.ORDER_ITEMS"
-    ]
-  }
-  ```
+```json
+{
+  "views": [
+    {
+      "view_name": "ORDER_ANALYSIS",
+      "description": "Customer order analysis: orders, customers, order line items, and returns/refunds. Interested in revenue, order counts, and customer signup trends."
+    },
+    {
+      "view_name": "HR_HEADCOUNT",
+      "database": "DB1",
+      "schema": "SCHEMA_A",
+      "tables": ["EMPLOYEES", "DEPARTMENTS"]
+    }
+  ]
+}
+```
 
-Copy whichever fits, edit it, and pass it via `--scope-file` (it takes
-precedence over `--description`/`--tables` if both are given):
+A view entry's optional `database`/`schema` fields are a shorthand: any
+table name in `tables` without a `.` in it is resolved against those
+defaults, so a view whose tables all live in one schema doesn't need to
+repeat that schema on every line. A table string that already contains a
+`.` (partial `schema.table` or full `db.schema.table`) is used as-is,
+so mixing schemas within one view still works — and even without
+`database`/`schema` set, a bare table name is matched against the whole
+inventory as long as it's unique (a warning is printed if it isn't).
+
+Copy the template, edit it, and pass it via `--scope-file` (it takes
+precedence over `--description`/`--tables`/`--view-name` if given). Each
+view lands in its own `--output-dir/<view_name>/` folder:
 
 ```
 python src/semantic_view_builder.py --inventory-dir ./snowflake_inventory_output \
   --scope-file scope.json \
-  --view-name ORDER_ANALYSIS --output semantic_view.sql \
+  --output-dir semantic_views_output \
   --account <account> --user <user>
 ```
 
-Or pass scope inline without a file:
+Or pass scope inline without a file, for a single quick one-off view:
 
 ```
 python src/semantic_view_builder.py --inventory-dir ./snowflake_inventory_output \
   --description "customer order analysis" \
-  --view-name ORDER_ANALYSIS --output semantic_view.sql \
+  --view-name ORDER_ANALYSIS --output-dir semantic_views_output \
   --account <account> --user <user>
 ```
 

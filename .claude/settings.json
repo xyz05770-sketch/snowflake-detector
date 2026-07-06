@@ -4,6 +4,8 @@
       "Read(**)",
       "Glob(**)",
       "Grep(**)",
+      "Write(**)",
+      "Edit(**)",
       "Bash(python src/sf_detector.py:*)",
       "Bash(python src/semantic_view_builder.py:*)",
       "Bash(./.venv/Scripts/python.exe src/sf_detector.py:*)",
@@ -13,7 +15,12 @@
       "Bash(timeout * ./.venv/Scripts/python.exe -c:*)",
       "Bash(ls -la:*)",
       "Bash(ls:*)",
-      "Bash(grep -c *:*)"
+      "Bash(grep -c *:*)",
+      "Bash(cat *)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(for v in *; do*)"
     ]
   }
 }

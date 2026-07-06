@@ -12,24 +12,27 @@ of the shortlisted tables.
 ## Flow
 
 0. **Check for an in-progress review first.** Before assuming this is a fresh
-   run, check whether a review JSON (e.g. `semantic_view_review.json` or
-   whatever `--review-file` produced last time) already exists in the working
-   directory — a plain existence check (e.g. Glob) is enough; don't read the
-   file's contents just to decide which question to ask. If one exists:
-   - Ask the user whether they want to **resume** (edit it further /
-     re-render as-is via `--from-review`, per step 5) or **start over** with
-     a fresh classify-mode run — don't assume either silently.
-   - If resuming, run the gap-check from step 3.5 once (a review JSON from
-     before that step existed may still have comment gaps), fill any gaps
-     found, then skip to step 5 (no new scope/inventory/connection needed —
-     this is exactly the case where the user re-invoked the skill in a new
-     session instead of just continuing the old conversation). Read the
-     file's contents only once resuming is confirmed and you actually need
-     to inspect or edit it.
+   run, check whether any per-view review JSONs already exist — Glob for
+   `semantic_views_output/*/semantic_view_review.json` (or wherever
+   `--output-dir` produced them last time) — a plain existence check is
+   enough; don't read file contents just to decide which question to ask. If
+   any exist:
+   - List the view folders found, and ask the user whether they want to
+     **resume** (edit one further / re-render as-is via `--from-review`, per
+     step 5) or **start over** with a fresh classify-mode run — don't assume
+     either silently.
+   - If resuming, run the gap-check from step 3.5 once per view being
+     resumed (a review JSON from before that step existed may still have
+     comment gaps), fill any gaps found, then skip to step 5 (no new
+     scope/inventory/connection needed — this is exactly the case where the
+     user re-invoked the skill in a new session instead of just continuing
+     the old conversation). Read a file's contents only once resuming is
+     confirmed and you actually need to inspect or edit it.
    - If starting over, continue to step 1 as normal; a fresh classify run
-     will overwrite the existing review JSON, so mention that before running
-     it. If the user wants to check whether it has hand-edits worth keeping
-     first, that's the point to read it — not before they've chosen.
+     overwrites the view folders named in the scope file, so mention that
+     before running it. If the user wants to check whether an existing
+     review has hand-edits worth keeping first, that's the point to read it
+     — not before they've chosen.
 
 1. **Determine scope.** Before asking the user anything, check for an existing
    scope file in the working directory (e.g. `scope.json`, or anything
@@ -40,11 +43,20 @@ of the shortlisted tables.
    file exists and the user hasn't already given you a natural-language
    description of the analysis goal ("build a semantic view for order
    analysis") or an explicit table list (`db.schema.table,...`), ask for one.
-   Either is fine — `src/semantic_view_builder.py` supports both, inline via
-   `--description`/`--tables` or via a `--scope-file <path>` JSON file (see
-   `templates/semantic_view_scope.description.example.json` and
-   `templates/semantic_view_scope.tables.example.json`). A scope file is
-   preferable when the user wants to save/edit/reuse the scope.
+
+   `src/semantic_view_builder.py` can build **multiple semantic views in one
+   run**: a `--scope-file <path>` JSON file holds a `"views"` list, each
+   entry giving a `view_name` plus either a `description` or a `tables` list
+   (see `templates/semantic_view_scope.example.json`, which shows one of
+   each) — mix natural-language and explicit-table entries freely in the
+   same file. A `tables`-based entry can add optional `database`/`schema`
+   fields so its table names don't need to be fully qualified (any table
+   without a `.` in it is resolved against those defaults; a table string
+   with a `.` is used as-is, so mixing schemas within one view still works).
+   For a single quick one-off without a file, `--description`/
+   `--tables` plus `--view-name` on the command line still works. A scope
+   file is preferable whenever the user wants to save/edit/reuse the scope,
+   or is building more than one view.
 
 2. **Confirm an inventory exists.** The tool reads `tables.json`/`views.json`
    from an `sf_detector.py` output directory (default
@@ -55,29 +67,34 @@ of the shortlisted tables.
 3. **Run the builder in classify mode:**
    ```
    python src/semantic_view_builder.py --inventory-dir <sf_detector_output_dir> \
-     --scope-file <scope.json>  # or --description "<goal>" / --tables db.schema.table,... \
-     --view-name <NAME> --output semantic_view.sql \
+     --scope-file <scope.json>  # or --description "<goal>" / --tables db.schema.table,... --view-name <NAME> \
+     --output-dir semantic_views_output \
      --account ... --user ... --auth-method ...
    ```
    Reuses the same `--account/--user/--role/--warehouse/--auth-method/--private-key-path/--env-file`
    flags as `sf_detector.py` — if the user already has a `.env`/`.secrets` file
    configured for that tool, it works unchanged here.
 
+   One command builds **every** view listed in the scope file (or the single
+   ad hoc view from `--description`/`--tables`). Each view gets its own
+   `<output-dir>/<view_name>/` folder containing the draft SQL
+   (`semantic_view.sql`) and an editable review JSON
+   (`semantic_view_review.json`) — a full serialization of every column's
+   classification, including ones that were dropped from the draft SQL (e.g.
+   columns misclassified as `key`), so nothing is silently hidden from the
+   user. Tables shared by more than one view are profiled only once.
+
    This step runs live queries against Snowflake (exact `COUNT(DISTINCT)` +
    small ordered `SELECT DISTINCT` samples per column) to classify columns as
-   keys/facts/dimensions, so it needs a real, working connection. It writes
-   **two** files: the draft SQL (`--output`) and an editable review JSON
-   (`--review-file`, default `<output-stem>_review.json`) — the review JSON
-   is a full serialization of every column's classification, including ones
-   that were dropped from the draft SQL (e.g. columns misclassified as
-   `key`), so nothing is silently hidden from the user.
+   keys/facts/dimensions, so it needs a real, working connection.
 
-3.5. **Fill in missing descriptions — compulsory, fill-gaps-only.** Cortex
-   Analyst/Agent reads a semantic view's `COMMENT`s as interpretation
+3.5. **Fill in missing descriptions — compulsory, fill-gaps-only, per view.**
+   Cortex Analyst/Agent reads a semantic view's `COMMENT`s as interpretation
    instructions, not just human documentation, so every `TABLES`/`FACTS`/
    `DIMENSIONS`/`METRICS` entry must end up with a meaningful description —
    never leave a gap unfilled, and never overwrite a real Snowflake comment
-   that already exists.
+   that already exists. When classify mode built multiple views, repeat this
+   step once per view's own `semantic_view_review.json`.
 
    - **Extract gaps** without reading the full review JSON into the
      conversation (it "can run to hundreds or thousands of lines," same
@@ -117,10 +134,11 @@ of the shortlisted tables.
      then continue to step 4.
 
 4. **Present the result — summary only, not full file contents.** The
-   `python` command's own console output already includes a summary table
-   (tables with their inferred keys/facts/dimensions, plus inferred
-   relationships) and a **"Suggested Review Points"** table; relay that
-   summary and the SQL/review-JSON file paths to the user. Don't `Read` the
+   `python` command's own console output already includes, per view, a
+   summary table (tables with their inferred keys/facts/dimensions, plus
+   inferred relationships) and a **"Suggested Review Points"** table; relay
+   that summary and each view's SQL/review-JSON folder path to the user.
+   Don't `Read` the
    full SQL or review JSON into the conversation at this step — on a
    real-sized schema either file can run to hundreds or thousands of lines,
    and the summary already contains everything needed to decide what to fix.
@@ -139,11 +157,24 @@ of the shortlisted tables.
    dimension/metric missing a Snowflake comment already had a description
    generated for it in step 3.5, so the presented SQL has no comment gaps.
 
-5. **Iterate via the review file, capped at 2 rounds.** If the user wants a
-   column reclassified or a relationship/metric changed, either the user
-   edits the review JSON directly, or — the default when you're applying the
-   edit on their behalf — you run a small `python -c` snippet via Bash that
-   loads the JSON, mutates just the relevant field(s), and writes it back
+   **Stop here and wait for the user.** Never edit `roles`/`relationships`/
+   `metrics` on your own initiative just because `review_hints` flagged
+   something — flagging is informational, not an instruction to act. Do not
+   silently "fix" a flagged column and only mention it afterward. If you
+   have an opinion on a flagged item (e.g. "this looks like a measure, not
+   a key"), say so and ask whether to apply that change — don't apply it
+   first and ask after. Proceed to step 5 only once the user has told you
+   what to change, said the draft looks fine as-is, or said they'll edit
+   the review JSON themselves and let you know when to re-render.
+
+5. **Iterate via the review file, capped at 2 rounds.** This step only
+   starts once the user has given explicit direction on what to change
+   (a specific column/relationship/metric fix, or "yes, apply what you
+   suggested") — not proactively from step 4's hints alone. Either the user
+   edits the review JSON directly, or — when the user has confirmed you
+   should apply the edit on their behalf — you run a small `python -c`
+   snippet via Bash that loads the JSON, mutates just the relevant field(s)
+   the user approved, and writes it back
    (`json.load`/mutate/`json.dump`), rather than using `Read`+`Edit`. This
    keeps the (potentially large) review file out of the conversation, since
    the edit is a targeted, mechanical field change, not something that needs
@@ -152,13 +183,16 @@ of the shortlisted tables.
    re-render deterministically with no reprofiling and no chat-based SQL
    editing:
    ```
-   python src/semantic_view_builder.py --from-review <review.json> --output semantic_view.sql
+   python src/semantic_view_builder.py --from-review semantic_views_output/<view_name>/semantic_view_review.json
    ```
    This needs no Snowflake connection and no inventory/scope flags — it's a
-   pure function of the review file, and it also writes the reconciled
-   `facts`/`dimensions`/`metrics`/`review_hints` back into the review JSON
-   itself (`roles` stays the source of truth; these derived fields are
-   refreshed so the file never disagrees with the SQL it just produced).
+   pure function of the review file. SQL is written as `semantic_view.sql`
+   alongside the review file (same folder), and the reconciled
+   `facts`/`dimensions`/`metrics`/`review_hints` are written back into the
+   review JSON itself (`roles` stays the source of truth; these derived
+   fields are refreshed so the file never disagrees with the SQL it just
+   produced). When multiple views were built, re-render each changed view
+   separately — this only ever operates on one review file at a time.
    Allow at most **2** such edit-and-rerender cycles. If a third round of
    corrections is requested, tell the user plainly that further automated
    cycles aren't likely to converge faster than a direct fix, and offer to
