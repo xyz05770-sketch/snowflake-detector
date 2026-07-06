@@ -1,3 +1,5 @@
 {
-  "databases": ["LANDING"]
+  "databases": [
+    {"database": "LANDING", "schemas": ["FINTECH", "JSONAPIDATA"]}
+  ]
 }

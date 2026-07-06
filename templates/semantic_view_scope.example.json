@@ -1,0 +1,14 @@
+{
+  "views": [
+    {
+      "view_name": "ORDER_ANALYSIS",
+      "description": "Customer order analysis: orders, customers, order line items, and returns/refunds. Interested in revenue, order counts, and customer signup trends."
+    },
+    {
+      "view_name": "HR_HEADCOUNT",
+      "database": "DB1",
+      "schema": "SCHEMA_A",
+      "tables": ["EMPLOYEES", "DEPARTMENTS"]
+    }
+  ]
+}

@@ -102,11 +102,24 @@ def parse_scope(args):
     if args.input:
         with open(args.input) as f:
             spec = json.load(f)
-        databases = spec.get("databases", [])
-        schemas_map = spec.get("schemas", {})
-        if not databases:
+        raw_databases = spec.get("databases", [])
+        if not raw_databases:
             sys.exit(f"{args.input} must include a non-empty 'databases' list.")
-        return {db: schemas_map.get(db) or None for db in databases}
+        scope = {}
+        for entry in raw_databases:
+            if isinstance(entry, str):
+                scope[entry] = None
+            elif isinstance(entry, dict):
+                db = entry.get("database")
+                if not db:
+                    sys.exit(f"{args.input}: each object in 'databases' needs a 'database' field, got {entry!r}.")
+                scope[db] = entry.get("schemas") or None
+            else:
+                sys.exit(
+                    f"{args.input}: 'databases' entries must be a database name string or a "
+                    f"{{'database': ..., 'schemas': [...]}} object, got {entry!r}."
+                )
+        return scope
 
     if not args.databases:
         sys.exit("Provide --input <file.json> or --databases.")

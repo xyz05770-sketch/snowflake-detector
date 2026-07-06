@@ -27,6 +27,7 @@ console = Console()
 
 ID_LIKE_RE = re.compile(r"(^ID$|_ID$|_KEY$)", re.IGNORECASE)
 NUMERIC_TYPES = ("NUMBER", "FIXED", "FLOAT", "REAL", "INT", "DECIMAL")
+LOW_CONFIDENCE_SCORE = 0.5
 
 _EMBED_MODEL = None
 _EMBED_MODEL_NAME = "all-mpnet-base-v2"
@@ -48,15 +49,47 @@ def load_inventory(output_dir):
     return tables
 
 
+VIEW_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
+
 def load_scope_file(path):
-    """Read a scope file containing either {"description": "..."} or {"tables": [...]}."""
+    """Read a scope file containing {"views": [{"view_name": ..., "description": ...|"tables": [...]}]}.
+
+    Each entry describes one semantic view to build; view_name doubles as
+    its output subfolder name, so it's restricted to a safe identifier
+    shape rather than an arbitrary path fragment.
+
+    An entry's optional "database"/"schema" fields are a shorthand: any
+    dot-free string in "tables" is prefixed with "{database}.{schema}." so
+    a view whose tables all live in one schema doesn't need to repeat that
+    schema's fully-qualified path on every line. A table string that already
+    contains a "." (e.g. cross-schema entries) is left untouched.
+    """
     with open(path) as f:
         spec = json.load(f)
-    description = spec.get("description")
-    tables = spec.get("tables")
-    if not description and not tables:
-        sys.exit(f"{path} must contain a non-empty 'description' or 'tables' field.")
-    return description, tables
+    views = spec.get("views")
+    if not views:
+        sys.exit(f"{path} must contain a non-empty 'views' list.")
+
+    seen_names = set()
+    specs = []
+    for i, entry in enumerate(views):
+        view_name = entry.get("view_name")
+        description = entry.get("description")
+        tables = entry.get("tables")
+        database = entry.get("database")
+        schema = entry.get("schema")
+        if not view_name or not VIEW_NAME_RE.match(view_name):
+            sys.exit(f"{path}: views[{i}] has a missing/invalid 'view_name' {view_name!r} (must match {VIEW_NAME_RE.pattern}).")
+        if view_name in seen_names:
+            sys.exit(f"{path}: duplicate view_name {view_name!r}.")
+        if not description and not tables:
+            sys.exit(f"{path}: views[{i}] ({view_name}) must contain a non-empty 'description' or 'tables' field.")
+        seen_names.add(view_name)
+        if tables and database and schema:
+            tables = [t if "." in t else f"{database}.{schema}.{t}" for t in tables]
+        specs.append({"view_name": view_name, "description": description, "tables": tables})
+    return specs
 
 
 def _get_embedding_model():
@@ -131,13 +164,26 @@ def _print_shortlist_scores(ranked, keep):
 def shortlist_tables(inventory, description=None, explicit_tables=None):
     if explicit_tables:
         wanted = {t.strip().upper() for t in explicit_tables}
-        shortlisted = [
-            t for t in inventory
-            if f"{t['database']}.{t['schema']}.{t['name']}".upper() in wanted
-            or t["name"].upper() in wanted
-        ]
+        shortlisted = []
+        bare_match_counts = {}
+        for t in inventory:
+            fq = f"{t['database']}.{t['schema']}.{t['name']}".upper()
+            schema_qualified = f"{t['schema']}.{t['name']}".upper()
+            bare = t["name"].upper()
+            if fq in wanted or schema_qualified in wanted:
+                shortlisted.append(t)
+            elif bare in wanted:
+                shortlisted.append(t)
+                bare_match_counts[bare] = bare_match_counts.get(bare, 0) + 1
         if not shortlisted:
             sys.exit(f"No inventory entries matched --tables: {explicit_tables}")
+        ambiguous = [name for name, count in bare_match_counts.items() if count > 1]
+        if ambiguous:
+            console.print(
+                f"[yellow]Warning: bare table name(s) {ambiguous} matched more than one table across "
+                "different schemas/databases - all matches were included. Qualify with schema.table or "
+                "db.schema.table (or a per-view 'database'/'schema' shorthand) if you only meant one.[/yellow]"
+            )
         return shortlisted
 
     if description:
@@ -163,6 +209,12 @@ def shortlist_tables(inventory, description=None, explicit_tables=None):
         ranked = sorted(zip(scores.tolist(), inventory), key=lambda sv: sv[0], reverse=True)
         keep = _select_by_elbow(ranked)
         _print_shortlist_scores(ranked, keep)
+        if ranked and ranked[0][0] < LOW_CONFIDENCE_SCORE:
+            console.print(
+                f"[yellow]Warning: even the best-matching table scored only {ranked[0][0]:.3f} against this "
+                f"description (below {LOW_CONFIDENCE_SCORE}) - none of the shortlisted tables may actually "
+                "be a good fit. Double-check the ranking above before trusting this view's draft.[/yellow]"
+            )
         return [t for _, t in keep]
 
     return inventory
@@ -236,11 +288,18 @@ def classify_columns(table, profile):
         is_id_like = bool(ID_LIKE_RE.search(name))
         is_numeric = any(data_type.startswith(t) for t in NUMERIC_TYPES)
 
-        if is_id_like or (row_count and uniqueness_ratio > 0.95):
+        # Check id-like naming first, then numeric-measure shape, and only fall
+        # back to the bare uniqueness-ratio heuristic last: a continuous numeric
+        # measure (AMOUNT, COUNT, ...) is naturally close to fully unique, so
+        # checking uniqueness before numeric-ness misclassified nearly every
+        # measure column as a "key" instead of a "fact".
+        if is_id_like:
             is_primary = name.upper() == "ID" or name.upper() == f"{table['name'].upper().rstrip('S')}_ID"
             roles[name] = {"role": "key", "primary": is_primary}
         elif is_numeric and row_count and uniqueness_ratio > 0.3:
             roles[name] = {"role": "fact"}
+        elif row_count and uniqueness_ratio > 0.95:
+            roles[name] = {"role": "key", "primary": False}
         else:
             roles[name] = {"role": "dimension"}
 
@@ -563,24 +622,26 @@ def build_arg_parser():
     )
     parser.add_argument(
         "--scope-file",
-        help="JSON file with {\"description\": \"...\"} or {\"tables\": [\"db.schema.table\", ...]} "
-        "(see templates/semantic_view_scope.*.example.json). Overrides --description/--tables.",
+        help="JSON file with {\"views\": [{\"view_name\": \"...\", \"description\": \"...\"|\"tables\": [\"db.schema.table\", ...]}]} "
+        "(see templates/semantic_view_scope.example.json), one entry per semantic view to build. "
+        "Overrides --description/--tables/--view-name.",
     )
-    parser.add_argument("--description", help="Natural-language description of the analysis goal, used to shortlist tables.")
-    parser.add_argument("--tables", help="Comma-separated explicit table list (name or db.schema.name).")
+    parser.add_argument("--description", help="Natural-language description of the analysis goal, used to shortlist tables (ignored if --scope-file is given).")
+    parser.add_argument("--tables", help="Comma-separated explicit table list (name or db.schema.name; ignored if --scope-file is given).")
     parser.add_argument(
         "--from-review",
         help="Render SQL directly from a (possibly hand-edited) review JSON emitted by a prior run, "
         "skipping the inventory/profiling/classification steps entirely. No Snowflake connection needed. "
+        "SQL is written as semantic_view.sql alongside the review file. "
         "Mutually exclusive with --inventory-dir/--scope-file/--description/--tables.",
     )
+    parser.add_argument("--view-name", default="MY_SEMANTIC_VIEW", help="Name for the generated semantic view (ignored if --scope-file is given).")
     parser.add_argument(
-        "--review-file",
-        help="Path to write the editable classification review JSON to (default: <output>_review.json). "
-        "Ignored when --from-review is given.",
+        "--output-dir",
+        default="./semantic_views_output",
+        help="Directory to write each view's semantic_view.sql/semantic_view_review.json into, "
+        "one subfolder per view_name (default: ./semantic_views_output).",
     )
-    parser.add_argument("--view-name", default="MY_SEMANTIC_VIEW", help="Name for the generated semantic view.")
-    parser.add_argument("--output", default="./semantic_view.sql", help="Path to write the draft SQL.")
 
     parser.add_argument("--account", default=os.environ.get("SNOWFLAKE_ACCOUNT"))
     parser.add_argument("--user", default=os.environ.get("SNOWFLAKE_USER"))
@@ -607,12 +668,14 @@ def main():
     if args.from_review:
         if args.inventory_dir or args.scope_file or args.description or args.tables:
             sys.exit("--from-review cannot be combined with --inventory-dir/--scope-file/--description/--tables.")
-        draft = load_review(args.from_review)
+        review_path = Path(args.from_review)
+        draft = load_review(review_path)
         sql = render_sql(draft)
-        Path(args.output).write_text(sql)
-        emit_review(draft, args.from_review)
-        console.print(f"[green]Rendered semantic view SQL written to {Path(args.output).resolve()}[/green]")
-        console.print(f"[green]Reconciled facts/dimensions/metrics/review_hints written back to {Path(args.from_review).resolve()}[/green]")
+        sql_path = review_path.parent / "semantic_view.sql"
+        sql_path.write_text(sql)
+        emit_review(draft, review_path)
+        console.print(f"[green]Rendered semantic view SQL written to {sql_path.resolve()}[/green]")
+        console.print(f"[green]Reconciled facts/dimensions/metrics/review_hints written back to {review_path.resolve()}[/green]")
         print_summary(draft)
         return
 
@@ -631,12 +694,23 @@ def main():
 
     inventory = load_inventory(args.inventory_dir)
 
-    description = args.description
-    explicit_tables = [t.strip() for t in args.tables.split(",")] if args.tables else None
     if args.scope_file:
-        description, explicit_tables = load_scope_file(args.scope_file)
+        specs = load_scope_file(args.scope_file)
+    else:
+        explicit_tables = [t.strip() for t in args.tables.split(",")] if args.tables else None
+        specs = [{"view_name": args.view_name, "description": args.description, "tables": explicit_tables}]
 
-    shortlisted = shortlist_tables(inventory, description=description, explicit_tables=explicit_tables)
+    shortlists = {}
+    for spec in specs:
+        console.rule(f"[bold]{spec['view_name']}[/bold]")
+        shortlists[spec["view_name"]] = shortlist_tables(
+            inventory, description=spec["description"], explicit_tables=spec["tables"]
+        )
+
+    tables_to_profile = {}
+    for shortlisted in shortlists.values():
+        for t in shortlisted:
+            tables_to_profile[(t["database"], t["schema"], t["name"])] = t
 
     conn = get_connection(
         account=account,
@@ -647,25 +721,38 @@ def main():
         private_key_path=private_key_path,
     )
     try:
-        profiles = profile_columns(conn, shortlisted)
+        profiles = profile_columns(conn, list(tables_to_profile.values()))
     finally:
         conn.close()
 
-    draft = build_draft(shortlisted, profiles, args.view_name)
-    sql = render_sql(draft)
+    output_dir = Path(args.output_dir)
+    written = []
+    for spec in specs:
+        view_name = spec["view_name"]
+        draft = build_draft(shortlists[view_name], profiles, view_name)
+        sql = render_sql(draft)
 
-    output_path = Path(args.output)
-    review_path = Path(args.review_file) if args.review_file else output_path.with_name(f"{output_path.stem}_review.json")
-    emit_review(draft, review_path)
+        view_dir = output_dir / view_name
+        view_dir.mkdir(parents=True, exist_ok=True)
+        sql_path = view_dir / "semantic_view.sql"
+        review_path = view_dir / "semantic_view_review.json"
 
-    output_path.write_text(sql)
-    console.print(f"[green]Draft semantic view SQL written to {output_path.resolve()}[/green]")
-    console.print(f"[green]Editable review file written to {review_path.resolve()}[/green]")
-    console.print(
-        "[yellow]Review the JSON above, correct any roles/relationships/metrics, then re-run with "
-        f"--from-review {review_path} to regenerate SQL deterministically.[/yellow]"
-    )
-    print_summary(draft)
+        emit_review(draft, review_path)
+        sql_path.write_text(sql)
+        written.append(view_dir)
+
+        console.print(f"[green]Draft semantic view SQL written to {sql_path.resolve()}[/green]")
+        console.print(f"[green]Editable review file written to {review_path.resolve()}[/green]")
+        console.print(
+            "[yellow]Review the JSON above, correct any roles/relationships/metrics, then re-run with "
+            f"--from-review {review_path} to regenerate SQL deterministically.[/yellow]"
+        )
+        print_summary(draft)
+
+    if len(written) > 1:
+        console.rule("[bold]All views written[/bold]")
+        for view_dir in written:
+            console.print(f"  {view_dir.resolve()}")
 
 
 if __name__ == "__main__":

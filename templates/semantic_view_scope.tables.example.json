@@ -1,7 +1,0 @@
-{
-  "tables": [
-    "DB1.SCHEMA_A.CUSTOMERS",
-    "DB1.SCHEMA_A.ORDERS",
-    "DB1.SCHEMA_A.ORDER_ITEMS"
-  ]
-}
